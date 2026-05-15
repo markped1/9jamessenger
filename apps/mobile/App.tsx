@@ -7,8 +7,8 @@ import {
   TouchableOpacity,
   TextInput,
   SafeAreaView,
+  StatusBar,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import { supabase } from './src/lib/supabase';
 
 export default function App() {
