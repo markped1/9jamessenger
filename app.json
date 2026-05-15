@@ -1,0 +1,17 @@
+{
+  "extra": {
+    "eas": {
+      "projectId": "2bd10a95-044a-4aa9-8c14-ccd57d4f5c61"
+    }
+  },
+  "expo": {
+    "android": {
+      "package": "com.ninejamsg"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2bd10a95-044a-4aa9-8c14-ccd57d4f5c61"
+      }
+    }
+  }
+}

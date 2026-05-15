@@ -1,18 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  SafeAreaView,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Search, Plus, Send, Mic, Phone, Video } from 'lucide-react-native';
-import io from 'socket.io-client';
-
 import { supabase } from './src/lib/supabase';
 
 export default function App() {
-  const [connected, setConnected] = useState(true);
   const [messages, setMessages] = useState<any[]>([]);
   const [inputText, setInputText] = useState('');
+  const [activeCall, setActiveCall] = useState<any>(null);
 
   useEffect(() => {
-    // 1. Fetch existing
     const fetchMessages = async () => {
       const { data } = await supabase
         .from('messages')
@@ -22,7 +26,6 @@ export default function App() {
     };
     fetchMessages();
 
-    // 2. Real-time
     const channel = supabase
       .channel('public:messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
@@ -30,307 +33,193 @@ export default function App() {
       })
       .subscribe();
 
+    const callChannel = supabase
+      .channel('public:calls')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'calls' }, (payload) => {
+        if (payload.new.receiver_id === 'mobile_user_1' && payload.new.status === 'ringing') {
+          setActiveCall(payload.new);
+        }
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(callChannel);
     };
   }, []);
 
   const handleSendMessage = async () => {
     if (!inputText.trim()) return;
-
-    const newMessage = {
+    await supabase.from('messages').insert([{
       chat_id: 'general',
       sender_id: 'mobile_user_1',
       content: inputText,
       type: 'text',
-    };
-
-    const { error } = await supabase.from('messages').insert([newMessage]);
-    if (error) console.error(error);
+    }]);
     setInputText('');
   };
+
+  const handleCall = async (type: 'audio' | 'video') => {
+    await supabase.from('calls').insert([{
+      caller_id: 'mobile_user_1',
+      receiver_id: 'target_user',
+      type,
+      status: 'ringing',
+    }]);
+  };
+
+  const handleEndCall = async () => {
+    if (activeCall) {
+      await supabase.from('calls').update({ status: 'ended' }).eq('id', activeCall.id);
+      setActiveCall(null);
+    }
+  };
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar style="auto" />
-      
+
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>9ja Messenger</Text>
-          <View style={styles.statusRow}>
-            <View style={[styles.statusDot, { backgroundColor: connected ? '#008751' : '#ff4b4b' }]} />
-            <Text style={styles.statusText}>{connected ? 'Online' : 'Connecting...'}</Text>
-          </View>
-        </View>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconButton}>
-            <Search size={24} color="#008751" />
+        <Text style={styles.title}>9ja Messenger 🇳🇬</Text>
+        <View style={styles.callButtons}>
+          <TouchableOpacity style={styles.callBtn} onPress={() => handleCall('audio')}>
+            <Text style={styles.callBtnText}>📞</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton}>
-            <Plus size={24} color="#008751" />
+          <TouchableOpacity style={styles.callBtn} onPress={() => handleCall('video')}>
+            <Text style={styles.callBtnText}>📹</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Chat List */}
-      <ScrollView style={styles.chatList} contentContainerStyle={styles.chatListContent}>
+      {/* Messages */}
+      <ScrollView style={styles.messageList} contentContainerStyle={styles.messageContent}>
+        {messages.length === 0 && (
+          <Text style={styles.emptyText}>No messages yet. Say hello! 👋</Text>
+        )}
         {messages.map((msg) => (
-          <View 
-            key={msg.id} 
+          <View
+            key={msg.id}
             style={[
-              styles.messageBubble, 
-              msg.sender_id === 'mobile_user_1' ? styles.ownMessage : styles.theirMessage
+              styles.bubble,
+              msg.sender_id === 'mobile_user_1' ? styles.ownBubble : styles.theirBubble,
             ]}
           >
-            <Text style={[
-              styles.messageText,
-              msg.sender_id === 'mobile_user_1' ? styles.ownMessageText : styles.theirMessageText
-            ]}>
+            <Text style={msg.sender_id === 'mobile_user_1' ? styles.ownText : styles.theirText}>
               {msg.content}
             </Text>
-            <Text style={styles.messageTime}>
+            <Text style={styles.timeText}>
               {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </Text>
           </View>
         ))}
       </ScrollView>
 
-      {/* Input Area */}
-      <View style={styles.inputArea}>
-        <TouchableOpacity style={styles.attachButton}>
-          <Plus size={24} color="#666" />
-        </TouchableOpacity>
-        <TextInput 
-          style={styles.input} 
+      {/* Input */}
+      <View style={styles.inputRow}>
+        <TextInput
+          style={styles.input}
           placeholder="Type a message..."
           value={inputText}
           onChangeText={setInputText}
+          onSubmitEditing={handleSendMessage}
         />
-        <TouchableOpacity style={styles.sendButton} onPress={handleSendMessage}>
-          {inputText.trim() ? <Send size={24} color="#008751" /> : <Mic size={24} color="#666" />}
+        <TouchableOpacity style={styles.sendBtn} onPress={handleSendMessage}>
+          <Text style={styles.sendBtnText}>Send</Text>
         </TouchableOpacity>
       </View>
-    </View>
-  );
-}
 
-function ChatItem({ name, message, time, unread }: any) {
-  return (
-    <TouchableOpacity style={styles.chatItem}>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{name.charAt(0)}</Text>
-      </View>
-      <View style={styles.chatContent}>
-        <View style={styles.chatHeader}>
-          <Text style={styles.chatName}>{name}</Text>
-          <Text style={styles.chatTime}>{time}</Text>
-        </View>
-        <Text style={styles.chatMessage} numberOfLines={1}>{message}</Text>
-      </View>
-      {unread > 0 && (
-        <View style={styles.unreadBadge}>
-          <Text style={styles.unreadText}>{unread}</Text>
+      {/* Incoming Call Overlay */}
+      {activeCall && (
+        <View style={styles.callOverlay}>
+          <Text style={styles.callTitle}>
+            {activeCall.type === 'video' ? '📹' : '📞'} Incoming {activeCall.type} call
+          </Text>
+          <Text style={styles.callFrom}>from {activeCall.caller_id}</Text>
+          <View style={styles.callActions}>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#008751' }]}
+              onPress={() => supabase.from('calls').update({ status: 'answered' }).eq('id', activeCall.id)}
+            >
+              <Text style={styles.actionBtnText}>✅ Answer</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: '#ff4b4b' }]}
+              onPress={handleEndCall}
+            >
+              <Text style={styles.actionBtnText}>❌ Decline</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
-    </TouchableOpacity>
-  );
-}
-
-function TabItem({ label, active }: any) {
-  return (
-    <TouchableOpacity style={styles.tabItem}>
-      <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{label}</Text>
-      {active && <View style={styles.tabIndicator} />}
-    </TouchableOpacity>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8fcf9',
-    paddingTop: 50,
-  },
+  container: { flex: 1, backgroundColor: '#f0f9f4' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#008751',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-  statusText: {
-    fontSize: 10,
-    color: '#666',
-    fontWeight: '500',
-  },
-  headerIcons: {
-    flexDirection: 'row',
-    gap: 15,
-  },
-  iconButton: {
-    padding: 5,
-  },
-  chatList: {
-    flex: 1,
-  },
-  chatListContent: {
-    padding: 15,
-  },
-  messageBubble: {
-    padding: 12,
-    borderRadius: 20,
-    maxWidth: '80%',
-    marginVertical: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
-  },
-  ownMessage: {
-    alignSelf: 'flex-end',
+    padding: 16,
     backgroundColor: '#008751',
-    borderBottomRightRadius: 2,
   },
-  theirMessage: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 2,
+  title: { fontSize: 20, fontWeight: 'bold', color: '#fff' },
+  callButtons: { flexDirection: 'row', gap: 12 },
+  callBtn: { padding: 4 },
+  callBtnText: { fontSize: 22 },
+  messageList: { flex: 1 },
+  messageContent: { padding: 16, gap: 8 },
+  emptyText: { textAlign: 'center', color: '#999', marginTop: 40, fontSize: 16 },
+  bubble: {
+    padding: 12,
+    borderRadius: 18,
+    maxWidth: '80%',
+    marginVertical: 2,
   },
-  messageText: {
-    fontSize: 16,
-  },
-  ownMessageText: {
-    color: '#fff',
-  },
-  theirMessageText: {
-    color: '#333',
-  },
-  messageTime: {
-    fontSize: 10,
-    color: 'rgba(0,0,0,0.4)',
-    alignSelf: 'flex-end',
-    marginTop: 4,
-  },
-  inputArea: {
+  ownBubble: { alignSelf: 'flex-end', backgroundColor: '#008751', borderBottomRightRadius: 4 },
+  theirBubble: { alignSelf: 'flex-start', backgroundColor: '#fff', borderBottomLeftRadius: 4 },
+  ownText: { color: '#fff', fontSize: 16 },
+  theirText: { color: '#333', fontSize: 16 },
+  timeText: { fontSize: 10, color: 'rgba(0,0,0,0.4)', marginTop: 4, alignSelf: 'flex-end' },
+  inputRow: {
     flexDirection: 'row',
-    padding: 10,
-    backgroundColor: 'white',
-    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: '#e0e0e0',
+    gap: 8,
   },
   input: {
     flex: 1,
-    height: 40,
+    height: 44,
     backgroundColor: '#f5f5f5',
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    marginHorizontal: 10,
-  },
-  attachButton: {
-    padding: 5,
-  },
-  sendButton: {
-    padding: 5,
-  },
-  chatItem: {
-    flexDirection: 'row',
-    padding: 15,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#008751',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    color: 'white',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  chatContent: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
-  },
-  chatName: {
+    borderRadius: 22,
+    paddingHorizontal: 16,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
   },
-  chatTime: {
-    fontSize: 12,
-    color: '#999',
-  },
-  chatMessage: {
-    fontSize: 14,
-    color: '#666',
-  },
-  unreadBadge: {
+  sendBtn: {
     backgroundColor: '#008751',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
+    paddingHorizontal: 20,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
   },
-  unreadText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  tabBar: {
-    flexDirection: 'row',
-    height: 60,
-    backgroundColor: 'white',
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingBottom: 10,
-  },
-  tabItem: {
-    flex: 1,
-    alignItems: 'center',
+  sendBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  callOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,50,30,0.95)',
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  tabLabel: {
-    fontSize: 12,
-    color: '#999',
-  },
-  tabLabelActive: {
-    color: '#008751',
-    fontWeight: 'bold',
-  },
-  tabIndicator: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#008751',
-    marginTop: 4,
-  }
+  callTitle: { fontSize: 32, color: '#fff', marginBottom: 8 },
+  callFrom: { fontSize: 18, color: 'rgba(255,255,255,0.7)', marginBottom: 48 },
+  callActions: { flexDirection: 'row', gap: 24 },
+  actionBtn: { paddingHorizontal: 28, paddingVertical: 16, borderRadius: 30 },
+  actionBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 });

@@ -4,29 +4,35 @@
     "slug": "9ja-messenger",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#008751"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.thompsonobosa.9jamsg"
+      "bundleIdentifier": "com.nineja.messenger"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#008751"
       },
-      "package": "com.thompsonobosa.9jamsg"
+      "package": "com.ninejamsg",
+      "compileSdkVersion": 34,
+      "targetSdkVersion": 34,
+      "minSdkVersion": 21
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "sdkVersion": "50.0.0",
+    "extra": {
+      "eas": {
+        "projectId": "2bd10a95-044a-4aa9-8c14-ccd57d4f5c61"
+      }
     }
   }
 }
