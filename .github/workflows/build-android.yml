@@ -53,7 +53,8 @@ jobs:
       - name: Build Android APK
         run: |
           cd apps/mobile/android
-          ./gradlew.bat assembleRelease
+          chmod +x ./gradlew || true
+          ./gradlew assembleRelease
       
       - name: Upload APK
         if: success()
